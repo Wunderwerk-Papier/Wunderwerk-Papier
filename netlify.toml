@@ -1,0 +1,16 @@
+# The app lives in the Wunderwerk-Papier-Netlify/ subfolder (Vite + React, npm).
+# "publish" and "functions" are resolved relative to the base directory.
+[build]
+  base = "Wunderwerk-Papier-Netlify"
+  command = "npm ci && npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/atelier/:splat"
+  status = 200
+  force = true
