@@ -1,0 +1,20 @@
+{
+  "name": "wunderwerk-papier",
+  "version": "1.0.0",
+  "description": "Kreativatelier mit Galerie und Werkverwaltung",
+  "scripts": {
+    "build": "vite build"
+  },
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@netlify/blobs": "11.1.9",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "vite": "8.0.13"
+  }
+}
