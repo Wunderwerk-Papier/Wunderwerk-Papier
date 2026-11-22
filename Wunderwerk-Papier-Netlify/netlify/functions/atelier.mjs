@@ -67,7 +67,9 @@ async function works(req){
     const works=rows.flatMap(row=>{
       if(!row || row.metadata.archived)return [];
       const {id,title,category,status,price,description,version,updated}=row.metadata;
-      return [{id,title,category,status,price,description,version,updated,photo:"/api/foto/"+id+"?v="+version}];
+      const photo="/api/foto/"+id+"?v="+version;
+      const photos=(row.metadata.photoLengths ?? [0]).map((_,index)=>photo+"&bild="+index);
+      return [{id,title,category,status,price,description,version,updated,photo,photos}];
     }).sort((a,b)=>b.updated-a.updated || a.id.localeCompare(b.id));
     return json({access:{edit},works});
   }
@@ -93,25 +95,28 @@ async function works(req){
      !["Karten","Leinwände","Junk Journals"].includes(category) ||
      !["Verfügbar","Reserviert","Verkauft"].includes(status) ||
      (rawPrice && !/^\d{1,8}$/.test(rawPrice))) return error("Bitte Titel, Bereich, Status und Preis prüfen.",400);
-  const file=data.get("photo");
-  let photo=null;
-  if(file && typeof file!=="string" && file.size){
-    if(file.size>maxPhoto) return error("Das Foto ist zu groß.",413);
-    photo=Buffer.from(await file.arrayBuffer());
-    if(photo.length<4 || photo[0]!==255 || photo[1]!==216 || photo[2]!==255)
-      return error("Bitte ein lesbares JPEG-Foto auswählen.",400);
-  }
-  if(!version && !photo) return error("Wähle ein Foto für dein Werk.",400);
-  const metadata={id,title,category,status,price,description,version:version+1,updated:Date.now(),archived:false};
+  const files=data.getAll("photo").filter(file=>typeof file!=="string" && file.size);
+  if(files.length>6 || files.reduce((sum,file)=>sum+file.size,0)>maxPhoto)
+    return error("Erlaubt sind bis zu 6 Fotos mit insgesamt 3,5 MB.",413);
+  const images=await Promise.all(files.map(async file=>Buffer.from(await file.arrayBuffer())));
+  if(images.some(photo=>photo.length<4 || photo[0]!==255 || photo[1]!==216 || photo[2]!==255))
+    return error("Bitte lesbare JPEG-Fotos auswählen.",400);
+  if(!previous && !images.length) return error("Wähle mindestens ein Foto für dein Werk.",400);
+  const photoLengths=images.length ? images.map(photo=>photo.length) : previous.metadata.photoLengths;
+  const metadata={id,title,category,status,price,description,version:version+1,updated:Date.now(),archived:false,
+    ...(photoLengths?{photoLengths}:{})};
   const conditions=previous ? {onlyIfMatch:previous.etag} : {onlyIfNew:true};
-  const result=await gallery.set(id,photo ?? previous.data,{metadata,...conditions});
+  const result=await gallery.set(id,images.length ? Buffer.concat(images) : previous.data,{metadata,...conditions});
   return result.modified?json({ok:true,id}):conflict();
 }
-async function image(id){
+async function image(id,index){
   if(!uuid.test(id))return new Response(null,{status:404});
   const entry=await store("atelier-works").getWithMetadata(id,{type:"arrayBuffer"});
   if(!entry || entry.metadata.archived)return new Response(null,{status:404});
-  return new Response(entry.data,{headers:{"Content-Type":"image/jpeg","X-Content-Type-Options":"nosniff","Cache-Control":"no-cache"}});
+  const lengths=entry.metadata.photoLengths ?? [entry.data.byteLength];
+  if(!Number.isInteger(index) || index<0 || index>=lengths.length)return new Response(null,{status:404});
+  const start=lengths.slice(0,index).reduce((sum,length)=>sum+length,0);
+  return new Response(entry.data.slice(start,start+lengths[index]),{headers:{"Content-Type":"image/jpeg","X-Content-Type-Options":"nosniff","Cache-Control":"no-cache"}});
 }
 async function contact(req,context){
   const {RESEND_API_KEY,ATELIER_MAIL_FROM,ATELIER_CONTACT_TO}=process.env;
@@ -147,7 +152,7 @@ export default async function handler(req,context){
     if(path==="atelier" && ["GET","POST"].includes(method)) return await works(req);
     if(path==="zugang" && ["POST","DELETE"].includes(method)) return await login(req,context);
     if(path==="kontakt" && method==="POST") return await contact(req,context);
-    if(path.startsWith("foto/") && method==="GET") return await image(path.slice(5));
+    if(path.startsWith("foto/") && method==="GET") return await image(path.slice(5),Number(url.searchParams.get("bild") ?? 0));
     return error("Nicht gefunden.",404);
   }catch(err){
     console.error("Atelier-Anfrage fehlgeschlagen",err?.code || err?.name);

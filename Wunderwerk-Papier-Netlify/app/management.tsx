@@ -4,17 +4,21 @@ import {categories,statuses, type Work} from "../lib/atelier";
 import {Modal,type Access} from "./atelier";
 import {Icon} from "./art";
 
-async function preparePhoto(file:File){
+async function preparePhoto(file:File, limit:number){
  if(file.size>50_000_000) throw Error("Bitte wähle ein Foto unter 50 MB.");
  const url=URL.createObjectURL(file);
  try{
    const img=new Image();img.src=url;
    try{await img.decode();}catch{throw Error("Dieses Foto lässt sich nicht öffnen. Bitte wähle ein JPEG-, PNG- oder WebP-Bild.");}
-   const scale=Math.min(1,1800/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement("canvas");
+   const scale=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement("canvas");
    canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
    const ctx=canvas.getContext("2d");if(!ctx) throw Error("Das Foto konnte nicht verarbeitet werden.");
    ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
-   return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error("Foto konnte nicht gespeichert werden.")),"image/jpeg",.88));
+   for(const quality of [.86,.72,.55,.38]){
+     const photo=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error("Foto konnte nicht gespeichert werden.")),"image/jpeg",quality));
+     if(photo.size<=limit)return photo;
+   }
+   throw Error("Ein Foto ist zu groß. Wähle ein kleineres Foto oder weniger Bilder.");
  }finally{URL.revokeObjectURL(url);}
 }
 const blank=():Work=>({id:crypto.randomUUID(),title:"",category:"Karten",status:"Verfügbar",price:null,description:"",photo:"",version:0});
@@ -25,16 +29,25 @@ async function saveRequest(url:string,body:FormData|string){
  if(!r.ok){const data=await r.json().catch(()=>({})) as {error?:string};throw Error(data.error||"Speichern fehlgeschlagen. Bitte versuche es erneut.");}
 }
 export default function Management({access,works,loaded,loadError,refresh,close}:{access:Access;works:Work[];loaded:boolean;loadError:string;refresh:()=>Promise<void>;close:()=>void}){
- const [draft,setDraft]=useState<Work|null>(null),[file,setFile]=useState<File|null>(null),[preview,setPreview]=useState(""),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[err,setErr]=useState(""),[askArchive,setAskArchive]=useState(false);
+ const [draft,setDraft]=useState<Work|null>(null),[files,setFiles]=useState<File[]>([]),[previews,setPreviews]=useState<string[]>([]),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[err,setErr]=useState(""),[askArchive,setAskArchive]=useState(false);
 
- useEffect(()=>{if(!file){setPreview("");return;}const url=URL.createObjectURL(file);setPreview(url);return()=>URL.revokeObjectURL(url);},[file]);
- function edit(w:Work|null){setDraft(w);setFile(null);setPreview("");setMsg("");setErr("");setAskArchive(false);}
+ useEffect(()=>{
+   const urls=files.map(file=>URL.createObjectURL(file));
+   setPreviews(urls);
+   return ()=>urls.forEach(url=>URL.revokeObjectURL(url));
+ },[files]);
+ function edit(w:Work|null){setDraft(w);setFiles([]);setPreviews([]);setMsg("");setErr("");setAskArchive(false);}
  async function perform(action:()=>Promise<void>){setBusy(true);setMsg("");setErr("");try{await action();}catch(e){setErr(e instanceof Error?e.message:"Die Verbindung wurde unterbrochen.");}finally{setBusy(false);}}
  async function submit(e:React.FormEvent<HTMLFormElement>){
   e.preventDefault();if(!draft || busy)return;const data=new FormData(e.currentTarget);
   await perform(async()=>{const raw=String(data.get("price")||"").trim().replace(",",".");if(raw && !/^\d{1,6}(\.\d{1,2})?$/.test(raw)) throw Error("Bitte gib den Preis in Euro an, zum Beispiel 6,50.");
    data.set("price",raw?String(Math.round(Number(raw)*100)):"");data.set("id",draft.id);data.set("version",String(draft.version));
-   if(file){const photo=await preparePhoto(file);if(photo.size>3500000)throw Error("Bitte wähle ein kleineres Foto.");data.set("photo",photo,"werk.jpg");}
+   data.delete("photo");
+   if(!draft.version && !files.length)throw Error("Bitte wähle mindestens ein Foto aus.");
+   for(const file of files){
+     const photo=await preparePhoto(file,Math.floor(3500000/files.length));
+     data.append("photo",photo,"werk.jpg");
+   }
    await saveRequest("/api/atelier",data);await refresh();edit(null);setMsg("Dein Werk wurde gespeichert.");
   });
  }
@@ -56,7 +69,17 @@ export default function Management({access,works,loaded,loadError,refresh,close}
  {feedback}<button className="goldButton" type="submit">Anmelden</button>
  </fieldset></form>:draft?<form key={draft.id} onSubmit={submit}><fieldset disabled={busy}><label>Titel<input name="title" maxLength={100} required defaultValue={draft.title} placeholder="Wie heißt dein Werk?"/></label><div className="pair"><label>Bereich<select name="category" defaultValue={draft.category}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Verfügbarkeit<select name="status" defaultValue={draft.status}>{statuses.map(s=><option key={s}>{s}</option>)}</select></label></div>
  <label>Preis in Euro <small>(optional)</small><input name="price" inputMode="decimal" defaultValue={draft.price===null?"":(draft.price/100).toFixed(2).replace(".",",")} placeholder="z. B. 6,50"/></label>
- <label>Foto<input type="file" accept="image/*" required={!draft.version} onChange={e=>setFile(e.target.files?.[0]||null)}/></label>{(preview||draft.photo)&&<img className="uploadPreview" src={preview||draft.photo} alt="Vorschau des Werkfotos"/>}
+ <label>Fotos<input type="file" accept="image/*" multiple onChange={e=>{
+   const selected=Array.from(e.target.files ?? []);
+   e.target.value="";
+   if(!selected.length)return;
+   if(files.length+selected.length>6){setErr("Du kannst bis zu 6 Fotos auswählen.");return;}
+   setErr("");setFiles([...files,...selected]);
+ }}/></label>
+ <p className="fineprint">Bis zu 6 Fotos. Das erste ist das Titelbild.{draft.version?" Neue Fotos ersetzen beim Speichern die bisherige Bildreihe.":""}</p>
+ <div className="photoOptions">{(files.length?previews:draft.photos ?? (draft.photo?[draft.photo]:[])).map((src,i)=>
+   <div key={src}><img src={src} alt={"Foto "+(i+1)}/>{files.length>0&&
+   <button className="textBtn" type="button" onClick={()=>setFiles(files.filter((_,index)=>index!==i))}>Foto {i+1} entfernen</button>}</div>)}</div>
  <label>Beschreibung <small>(optional)</small><textarea name="description" maxLength={2000} defaultValue={draft.description} rows={3}/></label>{feedback}
  <div className="formActions"><button className="goldButton" type="submit"><Icon name="upload"/>{busy?"Wird gespeichert …":"Werk speichern"}</button><button type="button" className="textBtn" onClick={()=>edit(null)}>Zurück</button></div>
  {draft.version>0&&<div className="archive">{askArchive?<><p>Dieses Werk aus der Galerie nehmen?</p><button type="button" className="textBtn" onClick={archive}>Ja, ausblenden</button> <button className="textBtn" type="button" onClick={()=>setAskArchive(false)}>Abbrechen</button></>:<button className="textBtn" type="button" onClick={()=>setAskArchive(true)}>Aus Galerie nehmen</button>}</div>}</fieldset></form>:<>

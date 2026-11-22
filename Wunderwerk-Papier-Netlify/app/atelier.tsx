@@ -14,7 +14,8 @@ export function Modal({title,close,children,wide=false}:{title:string;close:()=>
 export function Badge({work}:{work:Work}){return <span className={"badge state"+["Verfügbar","Reserviert","Verkauft"].indexOf(work.status)}><i/>{work.status}</span>;}
 export default function Atelier(){
  const [works,setWorks]=useState<Work[]>([]),[access,setAccess]=useState<Access>(initial),[loaded,setLoaded]=useState(false),[error,setError]=useState(""),[section,setSection]=useState<Category|"Alle Werke">("Alle Werke"),[only,setOnly]=useState(false),[detail,setDetail]=useState<Work|null>(null),[manage,setManage]=useState(false),[menu,setMenu]=useState(false);
- const [contact,setContact]=useState(false);
+ const [photoIndex,setPhotoIndex]=useState(0);
+ const [contact,setContact]=useState(()=>new URLSearchParams(window.location.search).get("kontakt")==="1");
  const menuButton = useRef<HTMLButtonElement>(null);
  function openManagement() {
    setMenu(false);
@@ -57,10 +58,14 @@ export default function Atelier(){
  <div className="wrap divider" aria-hidden="true"><i/><span>✧</span><i/></div>
  <section id="galerie" className="wrap collection"><div className="collectionHead"><div><p className="eyebrow"><b aria-hidden="true"/>Die Kollektion</p><h2>Aus dem Atelier</h2></div><label className="filter"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/><span className="switch"/>Nur verfügbare Werke</label></div>
  <div className="tabs" role="group" aria-label="Werke nach Bereich anzeigen">{(["Alle Werke",...categories] as const).map(c=><button key={c} aria-pressed={section===c} onClick={()=>setSection(c)}>{c}</button>)}</div>
- {error?<div className="notice" role="alert">{error} <button className="textBtn" onClick={reload}>Erneut versuchen</button></div>:<div className="cards" aria-live="polite">{displayed.map(w=><button key={w.id} className="workCard" onClick={()=>setDetail(w)} aria-label={w.title+", "+w.category+", "+w.status}><div className="cardPhoto"><img loading="lazy" src={w.photo} alt={w.title}/><Badge work={w}/></div><div className="cardBody"><span className="meta">{w.category}{w.demo?" · Beispielmotiv":""}</span><div className="cardTitle"><h3>{w.title}</h3>{w.price!==null&&<span>{money(w.price)}</span>}</div></div></button>)}
+ {error?<div className="notice" role="alert">{error} <button className="textBtn" onClick={reload}>Erneut versuchen</button></div>:<div className="cards" aria-live="polite">{displayed.map(w=><button key={w.id} className="workCard" onClick={()=>{setPhotoIndex(0);setDetail(w);}} aria-label={w.title+", "+w.category+", "+w.status}><div className="cardPhoto"><img loading="lazy" src={w.photo} alt={w.title}/><Badge work={w}/></div><div className="cardBody"><span className="meta">{w.category}{w.demo?" · Beispielmotiv":""}</span><div className="cardTitle"><h3>{w.title}</h3>{w.price!==null&&<span>{money(w.price)}</span>}</div></div></button>)}
  {!displayed.length&&<div className="empty">In diesem Bereich ist momentan kein Werk verfügbar. <button className="textBtn" onClick={()=>setOnly(false)}>Alle Status anzeigen</button></div>}</div>}</section>
- </main><footer><div className="wrap footerRow"><a className="brand small" href="#anfang"><Sprig/><span>Wunderwerk <em>Papier</em></span></a><span>Kreativatelier</span><a href="#anfang">Zum Seitenanfang</a></div></footer>
- {detail&&<Modal wide title={detail.title} close={()=>setDetail(null)}><div className="detail"><img className="detailPhoto" src={detail.photo} alt={detail.title}/><div className="detailText"><p className="eyebrow">{detail.category}</p><h2>{detail.title}</h2><Badge work={detail}/>{detail.price!==null&&<p className="detailPrice">{money(detail.price)}</p>}{detail.description&&<p className="description">{detail.description}</p>}{detail.demo&&<p className="fineprint">Beispielmotiv zur Vorschau. Der Status und ein eventuell angezeigter Preis dienen der Illustration.</p>}</div></div></Modal>}
+ </main><footer><div className="wrap footerRow"><a className="brand small" href="#anfang"><Sprig/><span>Wunderwerk <em>Papier</em></span></a><span>Kreativatelier</span><a href="/impressum.html">Impressum</a><a href="#anfang">Zum Seitenanfang</a></div></footer>
+ {detail&&<Modal wide title={detail.title} close={()=>setDetail(null)}><div className="detail"><div className="detailImages">
+ <img className="detailPhoto" src={detail.photos?.[photoIndex] ?? detail.photo} alt={detail.title+" · Foto "+(photoIndex+1)}/>
+ {(detail.photos?.length ?? 0)>1&&<div className="photoOptions" aria-label="Weitere Fotos">{detail.photos!.map((src,i)=>
+  <button type="button" key={src} aria-label={"Foto "+(i+1)+" anzeigen"} aria-pressed={i===photoIndex} onClick={()=>setPhotoIndex(i)}><img src={src} alt=""/></button>)}</div>}
+ </div><div className="detailText"><p className="eyebrow">{detail.category}</p><h2>{detail.title}</h2><Badge work={detail}/>{detail.price!==null&&<p className="detailPrice">{money(detail.price)}</p>}{detail.description&&<p className="description">{detail.description}</p>}{detail.demo&&<p className="fineprint">Beispielmotiv zur Vorschau. Der Status und ein eventuell angezeigter Preis dienen der Illustration.</p>}</div></div></Modal>}
  {contact&&<Contact close={()=>setContact(false)}/>}
  {manage&&<Management access={access} works={works} loaded={loaded} loadError={error} refresh={reload} close={()=>setManage(false)}/>}</>;
 }

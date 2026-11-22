@@ -39,3 +39,9 @@ Zugangsdaten gehören in die Netlify-Umgebungsvariablen. `.env.example` enthält
 ## Bestehende Werke aus ChatGPT Work
 
 Das ZIP enthält die Beispielbilder, aber keinen Export der bisherigen Werke, hochgeladenen Fotos oder Sitzungen. Bereits eingestellte Werke können in der neuen Verwaltung erneut angelegt werden. Die bestehende Work-Seite und die IONOS-Domain wurden für dieses Paket nicht umgestellt.
+
+## Impressum und mehrere Fotos
+
+Die öffentliche Impressumsadresse ist in `public/impressum.html` hinterlegt. Prüfe den E-Mail-Empfang und das Kontaktformular nach dem Deploy.
+
+Beim Anlegen oder Bearbeiten eines Werks lassen sich bis zu sechs Fotos auswählen. Beim Bearbeiten ersetzt eine neue Auswahl die bisherige Bildreihe. Ohne neue Auswahl bleiben die bisherigen Fotos erhalten. Besucher können in der Werkansicht zwischen den Fotos wechseln.

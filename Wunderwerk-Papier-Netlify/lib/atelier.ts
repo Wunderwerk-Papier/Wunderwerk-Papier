@@ -4,7 +4,7 @@ export type Category = typeof categories[number];
 export type Status = typeof statuses[number];
 export type Work = {
   id: string; title: string; category: Category; status: Status; price: number | null;
-  description: string; photo: string; version: number; demo?: boolean;
+  description: string; photo: string; photos?: string[]; version: number; demo?: boolean;
 };
 export function money(cents: number) {
   return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(cents / 100);
