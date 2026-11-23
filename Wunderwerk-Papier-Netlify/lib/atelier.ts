@@ -1,4 +1,4 @@
-export const seasons = { schnee: "Weihnachtszeit", herbst: "Herbst" } as const;
+export const seasons = { schnee: "Schnee", weihnachten: "Frohe Weihnachten", herbst: "Herbst" } as const;
 export type Season = keyof typeof seasons | "aus";
 export const defaultHeroUrl = "/atelier/titelbild.jpeg";
 export const categories = ["Karten", "Leinwände", "Junk Journals"] as const;

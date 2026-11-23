@@ -174,7 +174,7 @@ async function contact(req,context){
 async function saveSeason(req){
   if(!await editor(req))return error("Bitte in der Verwaltung anmelden.",403);
   const data=await req.json().catch(()=>null);
-  if(!["aus","schnee","herbst"].includes(data?.season))return error("Ungültige Animation.",400);
+  if(!["aus","schnee","weihnachten","herbst"].includes(data?.season))return error("Ungültige Animation.",400);
   await store("atelier-design").setJSON("jahreszeit",{season:data.season});
   return json({ok:true});
 }
