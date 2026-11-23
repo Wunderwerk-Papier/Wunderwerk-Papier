@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { getStore } from "@netlify/blobs";
 
+const statuses = ["Verfügbar", "Reserviert", "Nicht mehr verfügbar"];
 const maxPhoto = 3500000;
 const cookieName = "__Host-atelier_editor";
 const eightHours = 28800;
@@ -21,6 +22,20 @@ async function editor(req){
   if (!hash) return false;
   const session = await store("atelier-sessions").get(hash,{type:"json"});
   return session?.expires > Date.now();
+}
+async function editingPresence(req){
+  const design=store("atelier-design");
+  const sessions=store("atelier-sessions");
+  if(req.method==="POST"){
+    if(!await editor(req))return error("Bitte in der Verwaltung anmelden.",403);
+    const expires=Date.now()+90000;
+    await design.setJSON("bearbeitung",{session:token(req),expires});
+    return json({active:true});
+  }
+  const presence=await design.get("bearbeitung",{type:"json"});
+  if(!presence || presence.expires<=Date.now())return json({active:false});
+  const session=await sessions.get(presence.session,{type:"json"});
+  return json({active:(session?.expires ?? 0)>Date.now()});
 }
 async function rate(scope,context,max){
   const limits = store("atelier-limits");
@@ -62,16 +77,18 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 async function works(req){
   const gallery=store("atelier-works");
   if(req.method==="GET"){
-    const [{blobs},edit]=await Promise.all([gallery.list(),editor(req)]);
+    const [{blobs},edit,hero]=await Promise.all([
+      gallery.list(),editor(req),store("atelier-design").getMetadata("titelbild")
+    ]);
     const rows=await Promise.all(blobs.map(({key})=>gallery.getMetadata(key)));
     const works=rows.flatMap(row=>{
       if(!row || row.metadata.archived)return [];
       const {id,title,category,status,price,description,version,updated}=row.metadata;
       const photo="/api/foto/"+id+"?v="+version;
       const photos=(row.metadata.photoLengths ?? [0]).map((_,index)=>photo+"&bild="+index);
-      return [{id,title,category,status,price,description,version,updated,photo,photos}];
+      return [{id,title,category,status:statuses.includes(status)?status:"Nicht mehr verfügbar",price,description,version,updated,photo,photos}];
     }).sort((a,b)=>b.updated-a.updated || a.id.localeCompare(b.id));
-    return json({access:{edit},works});
+    return json({access:{edit},works,heroUrl:hero?"/api/titelbild?v="+encodeURIComponent(hero.etag):""});
   }
   if(!await editor(req)) return error("Bitte in der Verwaltung anmelden.",403);
   const data=await req.formData().catch(()=>null);
@@ -93,7 +110,7 @@ async function works(req){
   const price=rawPrice?Number(rawPrice):null;
   if(!title || title.length>100 || description.length>2000 ||
      !["Karten","Leinwände","Junk Journals"].includes(category) ||
-     !["Verfügbar","Reserviert","Verkauft"].includes(status) ||
+     !statuses.includes(status) ||
      (rawPrice && !/^\d{1,8}$/.test(rawPrice))) return error("Bitte Titel, Bereich, Status und Preis prüfen.",400);
   const files=data.getAll("photo").filter(file=>typeof file!=="string" && file.size);
   if(files.length>6 || files.reduce((sum,file)=>sum+file.size,0)>maxPhoto)
@@ -117,6 +134,23 @@ async function image(id,index){
   if(!Number.isInteger(index) || index<0 || index>=lengths.length)return new Response(null,{status:404});
   const start=lengths.slice(0,index).reduce((sum,length)=>sum+length,0);
   return new Response(entry.data.slice(start,start+lengths[index]),{headers:{"Content-Type":"image/jpeg","X-Content-Type-Options":"nosniff","Cache-Control":"no-cache"}});
+}
+async function heroImage(req){
+  const design=store("atelier-design");
+  if(req.method==="GET"){
+    const image=await design.get("titelbild",{type:"arrayBuffer"});
+    if(!image)return new Response(null,{status:404});
+    return new Response(image,{headers:{"Content-Type":"image/jpeg","X-Content-Type-Options":"nosniff","Cache-Control":"no-cache"}});
+  }
+  if(!await editor(req))return error("Bitte in der Verwaltung anmelden.",403);
+  const data=await req.formData().catch(()=>null);
+  const file=data?.get("photo");
+  if(!file || typeof file==="string" || file.size<4)return error("Bitte wähle ein Foto aus.",400);
+  if(file.size>maxPhoto)return error("Das Titelbild ist zu groß.",413);
+  const photo=Buffer.from(await file.arrayBuffer());
+  if(photo[0]!==255 || photo[1]!==216 || photo[2]!==255)return error("Bitte ein lesbares JPEG-Foto auswählen.",400);
+  await design.set("titelbild",photo);
+  return json({ok:true});
 }
 async function contact(req,context){
   const {RESEND_API_KEY,ATELIER_MAIL_FROM,ATELIER_CONTACT_TO}=process.env;
@@ -146,11 +180,13 @@ export default async function handler(req,context){
          req.headers.get("sec-fetch-site")==="cross-site" ||
          (req.headers.has("origin") && req.headers.get("origin")!==url.origin))
         return error("Anfrage nicht zugelassen.",403);
-      const max=path==="atelier"?3700000:18000;
+      const max=["atelier","titelbild"].includes(path)?3700000:18000;
       if(Number(req.headers.get("content-length"))>max) return error("Die Anfrage ist zu groß.",413);
     }
     if(path==="atelier" && ["GET","POST"].includes(method)) return await works(req);
     if(path==="zugang" && ["POST","DELETE"].includes(method)) return await login(req,context);
+    if(path==="titelbild" && ["GET","POST"].includes(method)) return await heroImage(req);
+    if(path==="bearbeitung" && ["GET","POST"].includes(method)) return await editingPresence(req);
     if(path==="kontakt" && method==="POST") return await contact(req,context);
     if(path.startsWith("foto/") && method==="GET") return await image(path.slice(5),Number(url.searchParams.get("bild") ?? 0));
     return error("Nicht gefunden.",404);

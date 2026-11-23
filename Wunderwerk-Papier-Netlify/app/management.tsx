@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
-import {categories,statuses, type Work} from "../lib/atelier";
+import {categories,defaultHeroUrl,statuses, type Work} from "../lib/atelier";
 import {Modal,type Access} from "./atelier";
 import {Icon} from "./art";
 
@@ -28,7 +28,7 @@ async function saveRequest(url:string,body:FormData|string){
  const r=await fetch(url,{method:"POST",body,headers});
  if(!r.ok){const data=await r.json().catch(()=>({})) as {error?:string};throw Error(data.error||"Speichern fehlgeschlagen. Bitte versuche es erneut.");}
 }
-export default function Management({access,works,loaded,loadError,refresh,close}:{access:Access;works:Work[];loaded:boolean;loadError:string;refresh:()=>Promise<void>;close:()=>void}){
+export default function Management({heroUrl,access,works,loaded,loadError,refresh,close}:{heroUrl:string;access:Access;works:Work[];loaded:boolean;loadError:string;refresh:()=>Promise<void>;close:()=>void}){
  const [draft,setDraft]=useState<Work|null>(null),[files,setFiles]=useState<File[]>([]),[previews,setPreviews]=useState<string[]>([]),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[err,setErr]=useState(""),[askArchive,setAskArchive]=useState(false);
 
  useEffect(()=>{
@@ -84,7 +84,26 @@ export default function Management({access,works,loaded,loadError,refresh,close}
  <div className="formActions"><button className="goldButton" type="submit"><Icon name="upload"/>{busy?"Wird gespeichert …":"Werk speichern"}</button><button type="button" className="textBtn" onClick={()=>edit(null)}>Zurück</button></div>
  {draft.version>0&&<div className="archive">{askArchive?<><p>Dieses Werk aus der Galerie nehmen?</p><button type="button" className="textBtn" onClick={archive}>Ja, ausblenden</button> <button className="textBtn" type="button" onClick={()=>setAskArchive(false)}>Abbrechen</button></>:<button className="textBtn" type="button" onClick={()=>setAskArchive(true)}>Aus Galerie nehmen</button>}</div>}</fieldset></form>:<>
  <button className="goldButton" onClick={()=>edit(blank())}><Icon name="plus"/>Neues Werk</button>{feedback}
- {works.length===0?<p className="manageEmpty">Dein erstes Werk ersetzt das Beispielmotiv in seinem Bereich.</p>:<ul className="manageList">{works.map(w=><li key={w.id}><img src={w.photo} alt=""/><div><strong>{w.title}</strong><small>{w.category} · {w.status}</small></div><button className="textBtn" onClick={()=>edit(w)}>Bearbeiten</button></li>)}</ul>}
+ <details className="share"><summary>Titelbild ändern</summary>
+ <img className="uploadPreview" src={heroUrl || defaultHeroUrl} alt="Aktuelles Titelbild"/>
+ <form onSubmit={event=>{
+   event.preventDefault();
+   const form=event.currentTarget;
+   const chosen=new FormData(form).get("photo");
+   if(!(chosen instanceof File) || !chosen.size)return;
+   void perform(async()=>{
+     const data=new FormData();
+     data.set("photo",await preparePhoto(chosen,3500000),"titelbild.jpg");
+     await saveRequest("/api/titelbild",data);
+     await refresh();
+     form.reset();
+     setMsg("Das neue Titelbild wurde gespeichert.");
+   });
+ }}><fieldset disabled={busy}>
+   <label>Neues Titelbild<input name="photo" type="file" accept="image/*" required/></label>
+   <button className="outlined" type="submit">Titelbild speichern</button>
+ </fieldset></form></details>
+ {works.length===0?<p className="manageEmpty">Dein erstes Werk ersetzt das Musterstück in seinem Bereich.</p>:<ul className="manageList">{works.map(w=><li key={w.id}><img src={w.photo} alt=""/><div><strong>{w.title}</strong><small>{w.category} · {w.status}</small></div><button className="textBtn" onClick={()=>edit(w)}>Bearbeiten</button></li>)}</ul>}
  <button className="textBtn" disabled={busy} onClick={()=>void perform(async()=>{
    const result=await fetch("/api/zugang",{method:"DELETE",headers:{"x-atelier-request":"1"}});
    if(!result.ok) throw Error("Abmelden fehlgeschlagen.");

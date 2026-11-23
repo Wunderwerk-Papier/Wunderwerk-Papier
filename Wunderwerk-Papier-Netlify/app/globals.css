@@ -75,3 +75,15 @@ header{background:var(--deep);border-bottom:1px solid #a88e5652;position:relativ
 .photoOptions button[aria-pressed=true] { border-color:var(--gold); }
 .detailImages { min-width:0; }
 .detailImages .detailPhoto { height:auto; }
+
+.photoFrame img.defaultHero {
+  object-position: center 36%;
+}
+
+.editingNotice {
+  padding: .7rem 1rem;
+  text-align: center;
+  color: var(--gold);
+  background: #19332a;
+  border-bottom: 1px solid var(--line);
+}
