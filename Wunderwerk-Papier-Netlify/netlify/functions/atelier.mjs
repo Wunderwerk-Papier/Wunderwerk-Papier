@@ -77,8 +77,9 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 async function works(req){
   const gallery=store("atelier-works");
   if(req.method==="GET"){
-    const [{blobs},edit,hero]=await Promise.all([
-      gallery.list(),editor(req),store("atelier-design").getMetadata("titelbild")
+    const design=store("atelier-design");
+    const [{blobs},edit,hero,season]=await Promise.all([
+      gallery.list(),editor(req),design.getMetadata("titelbild"),design.get("jahreszeit",{type:"json"})
     ]);
     const rows=await Promise.all(blobs.map(({key})=>gallery.getMetadata(key)));
     const works=rows.flatMap(row=>{
@@ -88,7 +89,7 @@ async function works(req){
       const photos=(row.metadata.photoLengths ?? [0]).map((_,index)=>photo+"&bild="+index);
       return [{id,title,category,status:statuses.includes(status)?status:"Nicht mehr verfügbar",price,description,version,updated,photo,photos}];
     }).sort((a,b)=>b.updated-a.updated || a.id.localeCompare(b.id));
-    return json({access:{edit},works,heroUrl:hero?"/api/titelbild?v="+encodeURIComponent(hero.etag):""});
+    return json({access:{edit},works,season:season?.season ?? "aus",heroUrl:hero?"/api/titelbild?v="+encodeURIComponent(hero.etag):""});
   }
   if(!await editor(req)) return error("Bitte in der Verwaltung anmelden.",403);
   const data=await req.formData().catch(()=>null);
@@ -113,8 +114,8 @@ async function works(req){
      !statuses.includes(status) ||
      (rawPrice && !/^\d{1,8}$/.test(rawPrice))) return error("Bitte Titel, Bereich, Status und Preis prüfen.",400);
   const files=data.getAll("photo").filter(file=>typeof file!=="string" && file.size);
-  if(files.length>6 || files.reduce((sum,file)=>sum+file.size,0)>maxPhoto)
-    return error("Erlaubt sind bis zu 6 Fotos mit insgesamt 3,5 MB.",413);
+  if(files.length>10 || files.reduce((sum,file)=>sum+file.size,0)>maxPhoto)
+    return error("Erlaubt sind bis zu 10 Fotos mit insgesamt 3,5 MB.",413);
   const images=await Promise.all(files.map(async file=>Buffer.from(await file.arrayBuffer())));
   if(images.some(photo=>photo.length<4 || photo[0]!==255 || photo[1]!==216 || photo[2]!==255))
     return error("Bitte lesbare JPEG-Fotos auswählen.",400);
@@ -170,6 +171,14 @@ async function contact(req,context){
   return result?.ok?json({ok:true}):error("Die Nachricht konnte nicht gesendet werden. Bitte versuche es später erneut.",502);
 }
 
+async function saveSeason(req){
+  if(!await editor(req))return error("Bitte in der Verwaltung anmelden.",403);
+  const data=await req.json().catch(()=>null);
+  if(!["aus","schnee","herbst"].includes(data?.season))return error("Ungültige Animation.",400);
+  await store("atelier-design").setJSON("jahreszeit",{season:data.season});
+  return json({ok:true});
+}
+
 export default async function handler(req,context){
   const url=new URL(req.url);
   const path=url.pathname.replace(/^\/(?:api|\.netlify\/functions\/atelier)\//,"");
@@ -187,6 +196,7 @@ export default async function handler(req,context){
     if(path==="zugang" && ["POST","DELETE"].includes(method)) return await login(req,context);
     if(path==="titelbild" && ["GET","POST"].includes(method)) return await heroImage(req);
     if(path==="bearbeitung" && ["GET","POST"].includes(method)) return await editingPresence(req);
+    if(path==="jahreszeit" && method==="POST") return await saveSeason(req);
     if(path==="kontakt" && method==="POST") return await contact(req,context);
     if(path.startsWith("foto/") && method==="GET") return await image(path.slice(5),Number(url.searchParams.get("bild") ?? 0));
     return error("Nicht gefunden.",404);

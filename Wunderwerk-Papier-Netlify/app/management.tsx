@@ -3,6 +3,7 @@ import {useEffect,useState} from "react";
 import {categories,defaultHeroUrl,statuses, type Work} from "../lib/atelier";
 import {Modal,type Access} from "./atelier";
 import {Icon} from "./art";
+import {seasons,type Season} from "../lib/atelier";
 
 async function preparePhoto(file:File, limit:number){
  if(file.size>50_000_000) throw Error("Bitte wähle ein Foto unter 50 MB.");
@@ -10,13 +11,22 @@ async function preparePhoto(file:File, limit:number){
  try{
    const img=new Image();img.src=url;
    try{await img.decode();}catch{throw Error("Dieses Foto lässt sich nicht öffnen. Bitte wähle ein JPEG-, PNG- oder WebP-Bild.");}
-   const scale=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement("canvas");
-   canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
-   const ctx=canvas.getContext("2d");if(!ctx) throw Error("Das Foto konnte nicht verarbeitet werden.");
-   ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
-   for(const quality of [.86,.72,.55,.38]){
-     const photo=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error("Foto konnte nicht gespeichert werden.")),"image/jpeg",quality));
-     if(photo.size<=limit)return photo;
+   const canvas=document.createElement("canvas");
+   const ctx=canvas.getContext("2d");
+   if(!ctx) throw Error("Das Foto konnte nicht verarbeitet werden.");
+   const longest=Math.max(img.naturalWidth,img.naturalHeight);
+   for(const maxSide of [1600,1200,900,640]){
+     const scale=Math.min(1,maxSide/longest);
+     canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+     canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+     ctx.fillStyle="#fff";
+     ctx.fillRect(0,0,canvas.width,canvas.height);
+     ctx.drawImage(img,0,0,canvas.width,canvas.height);
+     for(const quality of [.86,.72,.55,.38]){
+       const photo=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error("Foto konnte nicht gespeichert werden.")),"image/jpeg",quality));
+       if(photo.size<=limit)return photo;
+     }
+     if(scale===1 && longest<=640)break;
    }
    throw Error("Ein Foto ist zu groß. Wähle ein kleineres Foto oder weniger Bilder.");
  }finally{URL.revokeObjectURL(url);}
@@ -28,7 +38,7 @@ async function saveRequest(url:string,body:FormData|string){
  const r=await fetch(url,{method:"POST",body,headers});
  if(!r.ok){const data=await r.json().catch(()=>({})) as {error?:string};throw Error(data.error||"Speichern fehlgeschlagen. Bitte versuche es erneut.");}
 }
-export default function Management({heroUrl,access,works,loaded,loadError,refresh,close}:{heroUrl:string;access:Access;works:Work[];loaded:boolean;loadError:string;refresh:()=>Promise<void>;close:()=>void}){
+export default function Management({heroUrl,season,access,works,loaded,loadError,refresh,close}:{heroUrl:string;season:Season;access:Access;works:Work[];loaded:boolean;loadError:string;refresh:()=>Promise<void>;close:()=>void}){
  const [draft,setDraft]=useState<Work|null>(null),[files,setFiles]=useState<File[]>([]),[previews,setPreviews]=useState<string[]>([]),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[err,setErr]=useState(""),[askArchive,setAskArchive]=useState(false);
 
  useEffect(()=>{
@@ -73,10 +83,10 @@ export default function Management({heroUrl,access,works,loaded,loadError,refres
    const selected=Array.from(e.target.files ?? []);
    e.target.value="";
    if(!selected.length)return;
-   if(files.length+selected.length>6){setErr("Du kannst bis zu 6 Fotos auswählen.");return;}
+   if(files.length+selected.length>10){setErr("Du kannst bis zu 10 Fotos auswählen.");return;}
    setErr("");setFiles([...files,...selected]);
  }}/></label>
- <p className="fineprint">Bis zu 6 Fotos. Das erste ist das Titelbild.{draft.version?" Neue Fotos ersetzen beim Speichern die bisherige Bildreihe.":""}</p>
+ <p className="fineprint">Bis zu 10 Fotos. Das erste ist das Titelbild.{draft.version?" Neue Fotos ersetzen beim Speichern die bisherige Bildreihe.":""}</p>
  <div className="photoOptions">{(files.length?previews:draft.photos ?? (draft.photo?[draft.photo]:[])).map((src,i)=>
    <div key={src}><img src={src} alt={"Foto "+(i+1)}/>{files.length>0&&
    <button className="textBtn" type="button" onClick={()=>setFiles(files.filter((_,index)=>index!==i))}>Foto {i+1} entfernen</button>}</div>)}</div>
@@ -84,6 +94,14 @@ export default function Management({heroUrl,access,works,loaded,loadError,refres
  <div className="formActions"><button className="goldButton" type="submit"><Icon name="upload"/>{busy?"Wird gespeichert …":"Werk speichern"}</button><button type="button" className="textBtn" onClick={()=>edit(null)}>Zurück</button></div>
  {draft.version>0&&<div className="archive">{askArchive?<><p>Dieses Werk aus der Galerie nehmen?</p><button type="button" className="textBtn" onClick={archive}>Ja, ausblenden</button> <button className="textBtn" type="button" onClick={()=>setAskArchive(false)}>Abbrechen</button></>:<button className="textBtn" type="button" onClick={()=>setAskArchive(true)}>Aus Galerie nehmen</button>}</div>}</fieldset></form>:<>
  <button className="goldButton" onClick={()=>edit(blank())}><Icon name="plus"/>Neues Werk</button>{feedback}
+ <fieldset className="seasonSettings" disabled={busy}>
+ <legend>Animation auf der Startseite</legend>
+ <div className="seasonButtons">{Object.entries(seasons).map(([mode,label])=>
+   <button type="button" className="outlined" key={mode} aria-pressed={season===mode} onClick={()=>void perform(async()=>{
+     await saveRequest("/api/jahreszeit",JSON.stringify({season:season===mode?"aus":mode}));
+     await refresh();
+   })}>{label}</button>)}</div>
+ </fieldset>
  <details className="share"><summary>Titelbild ändern</summary>
  <img className="uploadPreview" src={heroUrl || defaultHeroUrl} alt="Aktuelles Titelbild"/>
  <form onSubmit={event=>{

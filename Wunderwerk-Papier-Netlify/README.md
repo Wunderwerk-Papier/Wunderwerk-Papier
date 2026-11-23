@@ -44,4 +44,4 @@ Das ZIP enthält die Beispielbilder, aber keinen Export der bisherigen Werke, ho
 
 Die öffentliche Impressumsadresse ist in `public/impressum.html` hinterlegt. Prüfe den E-Mail-Empfang und das Kontaktformular nach dem Deploy.
 
-Beim Anlegen oder Bearbeiten eines Werks lassen sich bis zu sechs Fotos auswählen. Beim Bearbeiten ersetzt eine neue Auswahl die bisherige Bildreihe. Ohne neue Auswahl bleiben die bisherigen Fotos erhalten. Besucher können in der Werkansicht zwischen den Fotos wechseln.
+Beim Anlegen oder Bearbeiten eines Werks lassen sich bis zu zehn Fotos auswählen. Beim Bearbeiten ersetzt eine neue Auswahl die bisherige Bildreihe. Ohne neue Auswahl bleiben die bisherigen Fotos erhalten. Besucher können in der Werkansicht zwischen den Fotos wechseln.
